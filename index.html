@@ -2,51 +2,56 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>曼谷探險誌 - 完整部屬版</title>
-    <!-- 1. 核心程式庫 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>曼谷探險誌 - 雲端共同編輯</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- 2. Firebase 雲端模組 (用於儲存開銷與裝備狀態) -->
+    <!-- Firebase 核心模組 -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
-        
-        // 將 Firebase 功能掛載到 window 供下方的 React 腳本使用
         window.FirebaseOps = { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, doc, setDoc, onSnapshot };
     </script>
 
-    <!-- 3. 字體與樣式 -->
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700;900&family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Noto Sans TC', sans-serif; background-color: #1a1c13; margin: 0; }
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #1a1c13; margin: 0; overflow: hidden; }
         .font-serif { font-family: 'Noto Serif TC', serif; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        .bg-yellow-hazard-stripe {
-            background: repeating-linear-gradient(45deg, #f9bc08, #f9bc08 15px, #0b1a0e 15px, #0b1a0e 30px);
-        }
+        .bg-yellow-hazard { background: repeating-linear-gradient(45deg, #f9bc08, #f9bc08 15px, #0b1a0e 15px, #0b1a0e 30px); }
         @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-6px); } }
         .animate-float { animation: float 3s ease-in-out infinite; }
         @keyframes soft-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
         .animate-soft-bounce { animation: soft-bounce 2s ease-in-out infinite; }
         @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .animate-spin-slow { animation: spin-slow 15s linear infinite; }
-        .overflow-wrap-anywhere { overflow-wrap: anywhere; }
+        .break-words-all { word-break: break-all; overflow-wrap: anywhere; white-space: normal; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
-    <!-- 4. Babel 解析 JSX 邏輯 -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- 內置 SVG 組件：確保離線可用且絕對不報錯 ---
+        /* * 🚨 重要：綁定你的專屬雲端資料庫 🚨
+         * 1. 前往 Firebase Console 建立專案
+         * 2. 獲取你的 Web SDK Config 並替換下方的內容
+         */
+        const MY_PERSONAL_CONFIG = {
+            apiKey: "這裡填入你的 apiKey",
+            authDomain: "這裡填入你的 authDomain",
+            projectId: "這裡填入你的 projectId",
+            storageBucket: "這裡填入你的 storageBucket",
+            messagingSenderId: "這裡填入你的 messagingSenderId",
+            appId: "這裡填入你的 appId"
+        };
+
         const Svg = {
             Sun: ({ className }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>,
             Cloud: ({ className }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.7-3.8-4.5-6.8-4.5-3.6 0-6.6 2.6-7.1 6-2.2.4-3.7 2.3-3.7 4.5 0 2.5 2 4.5 4.5 4.5h12.5z"/></svg>,
@@ -55,39 +60,48 @@
             Flame: ({ className }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>,
             Compass: ({ className }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36z"/></svg>,
             Binoc: ({ className }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M8 22a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"/><path d="M16 22a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z"/><path d="M7 10V7a5 5 0 0 1 10 0v3"/><path d="M12 14v3"/></svg>,
-            Check: ({ className }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>,
+            Check: ({ className }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>,
             Trash: ({ className }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>,
-            Pin: ({ className }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>,
             Wallet: ({ className }) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></svg>
         };
 
         const App = () => {
             const [activeTab, setActiveTab] = useState('itinerary');
             const [activeDay, setActiveDay] = useState(1);
-            const [user, setUser] = useState(null);
+            const [syncStatus, setSyncStatus] = useState("⌛ 初始化中...");
             const [db, setDb] = useState(null);
-            const [checklist, setChecklist] = useState([
-                { id: 1, text: '驅蚊噴霧 (曼谷必備)', completed: false },
-                { id: 2, text: '防曬乳 (熱帶氣候)', completed: false },
-                { id: 3, text: '輕便推車 (移動用)', completed: false },
-                { id: 4, text: '薄外套 (室內冷氣強)', completed: false },
-                { id: 5, text: '折疊傘 (遮陽擋雨)', completed: false },
-                { id: 6, text: '常備藥品 (感冒腹瀉)', completed: false },
-            ]);
-            const [expenses, setExpenses] = useState([]);
-            const [newExpense, setNewExpense] = useState({ title: '', amount: '', date: '2024-11-12' });
+            
+            // 優先讀取本地，確保重整不消失
+            const [checklist, setChecklist] = useState(() => {
+                const s = localStorage.getItem('bk_shared_checklist');
+                return s ? JSON.parse(s) : [
+                    { id: 1, text: '驅蚊噴霧 (曼谷必備)', completed: false },
+                    { id: 2, text: '防曬乳 (熱帶氣候)', completed: false },
+                    { id: 3, text: '輕便推車 (移動用)', completed: false },
+                    { id: 4, text: '薄外套 (室內冷氣強)', completed: false },
+                    { id: 5, text: '折疊傘 (遮陽擋雨)', completed: false },
+                    { id: 6, text: '常備藥品 (感冒腹瀉)', completed: false },
+                ];
+            });
+            const [expenses, setExpenses] = useState(() => {
+                const s = localStorage.getItem('bk_shared_expenses');
+                return s ? JSON.parse(s) : [];
+            });
+            const [newExpense, setNewExpense] = useState({ title: '', amount: '' });
             
             const scrollContainerRef = useRef(null);
-            const appId = typeof __app_id !== 'undefined' ? __app_id : "bangkok-trip-2024";
+            const appId = "bangkok-trip-2024";
 
-            // --- Firebase 初始化與資料同步 (遵循 RULE 1 & 3) ---
             useEffect(() => {
                 const initFirebase = async () => {
-                    if (!window.FirebaseOps || typeof __firebase_config === 'undefined') return;
-                    const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, doc, onSnapshot } = window.FirebaseOps;
+                    // 如果用戶沒有填入 Key，就顯示提示
+                    if (MY_PERSONAL_CONFIG.apiKey === "這裡填入你的 apiKey") {
+                        setSyncStatus("💾 本機模式 (未綁定雲端)");
+                        return;
+                    }
                     
-                    const firebaseConfig = JSON.parse(__firebase_config);
-                    const app = initializeApp(firebaseConfig);
+                    const { initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, doc, onSnapshot } = window.FirebaseOps;
+                    const app = initializeApp(MY_PERSONAL_CONFIG);
                     const auth = getAuth(app);
                     const firestore = getFirestore(app);
                     setDb(firestore);
@@ -95,13 +109,21 @@
                     await signInAnonymously(auth);
                     onAuthStateChanged(auth, (u) => {
                         if (u) {
-                            setUser(u);
-                            const docRef = doc(firestore, 'artifacts', appId, 'users', u.uid, 'tripData', 'state');
+                            const docRef = doc(firestore, 'artifacts', appId, 'public', 'data', 'trip', 'shared');
                             onSnapshot(docRef, (docSnap) => {
                                 if (docSnap.exists()) {
                                     const data = docSnap.data();
-                                    if (data.checklist) setChecklist(data.checklist);
-                                    if (data.expenses) setExpenses(data.expenses);
+                                    if (data.checklist) {
+                                        setChecklist(data.checklist);
+                                        localStorage.setItem('bk_shared_checklist', JSON.stringify(data.checklist));
+                                    }
+                                    if (data.expenses) {
+                                        setExpenses(data.expenses);
+                                        localStorage.setItem('bk_shared_expenses', JSON.stringify(data.expenses));
+                                    }
+                                    setSyncStatus("👥 雲端共同編輯中");
+                                } else {
+                                    setSyncStatus("📡 雲端已連線 (空資料)");
                                 }
                             });
                         }
@@ -111,15 +133,18 @@
             }, []);
 
             const saveToCloud = async (newChecklist, newExpenses) => {
-                if (!user || !db) return;
+                localStorage.setItem('bk_shared_checklist', JSON.stringify(newChecklist || checklist));
+                localStorage.setItem('bk_shared_expenses', JSON.stringify(newExpenses || expenses));
+                
+                if (!db) return;
                 const { doc, setDoc } = window.FirebaseOps;
                 try {
-                    await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'tripData', 'state'), {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'trip', 'shared'), {
                         checklist: newChecklist || checklist,
                         expenses: newExpenses || expenses,
                         lastUpdated: Date.now()
                     });
-                } catch (e) { console.error("Cloud Save Failed", e); }
+                } catch (e) { console.error(e); }
             };
 
             const toggleCheck = (id) => {
@@ -134,7 +159,7 @@
                     const updated = [{ id: Date.now(), ...newExpense, amount: Number(newExpense.amount), editTime: timeStr }, ...expenses];
                     setExpenses(updated);
                     saveToCloud(null, updated);
-                    setNewExpense({...newExpense, title: '', amount: ''});
+                    setNewExpense({ title: '', amount: '' });
                 }
             };
 
@@ -144,48 +169,42 @@
                 saveToCloud(null, updated);
             };
 
-            useEffect(() => { if (scrollContainerRef.current) scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' }); }, [activeTab, activeDay]);
-
             const itinerary = [
-                { day: 1, date: "11/12", title: "曼谷基地登陸", weather: { status: "晴朗", temp: "32°C", hum: "65%", icon: "Sun" }, spots: [{ time: "15:00", name: "飯店 Check-in", desc: "適應熱帶氣候，玩水消暑。", transport: "機場包車", mapUrl: "https://www.google.com/maps/search/?api=1&query=Bangkok+Hotels" }, { time: "18:00", name: "ICONSIAM", desc: "SookSiam 室內市場用餐。", transport: "接駁船", mapUrl: "https://www.google.com/maps/search/?api=1&query=ICONSIAM" }] },
-                { day: 2, date: "11/13", title: "野生巨獸追蹤", weather: { status: "炎熱", temp: "34°C", hum: "60%", icon: "Sun" }, spots: [{ time: "09:30", name: "Safari World", desc: "【重點】親手餵食長頸鹿。", transport: "專屬包車", mapUrl: "https://www.google.com/maps/search/?api=1&query=Safari+World+Bangkok", special: true }, { time: "18:30", name: "Jodd Fairs 夜市", desc: "著名的火山排骨晚餐。", transport: "MRT Rama 9", mapUrl: "https://www.google.com/maps/search/?api=1&query=JODD+FAIRS+Rama+9" }] },
-                { day: 3, date: "11/14", title: "史前化石考古", weather: { status: "多雲", temp: "30°C", hum: "70%", icon: "Cloud" }, spots: [{ time: "10:30", name: "兒童探索博物館", desc: "沙坑考古挖掘恐龍。", transport: "BTS Mo Chit", mapUrl: "https://www.google.com/maps/search/?api=1&query=Children's+Discovery+Museum+Bangkok" }, { time: "16:00", name: "Mixt Chatuchak", desc: "冷氣避暑，物資補給。", transport: "步行", mapUrl: "https://www.google.com/maps/search/?api=1&query=Mixt+Chatuchak" }] },
-                { day: 4, date: "11/15", title: "侏儸紀核心", weather: { status: "局部陣雨", temp: "29°C", hum: "80%", icon: "Rain" }, spots: [{ time: "11:00", name: "Jurassic Adventure", desc: "1:1動態恐龍震撼體驗。", transport: "BTS 金線", mapUrl: "https://www.google.com/maps/search/?api=1&query=Jurassic+Dinosaur+Adventure+Park+ICONSIAM", special: true }, { time: "17:00", name: "Siam Square", desc: "造型冰淇淋慶祝。", transport: "BTS Siam", mapUrl: "https://www.google.com/maps/search/?api=1&query=Siam+Square" }] },
-                { day: 5, date: "11/16", title: "大採買 & 返航", weather: { status: "晴朗", temp: "33°C", hum: "60%", icon: "Sun" }, spots: [{ time: "10:00", name: "Big C 補給總庫", desc: "海苔零食一次買齊。", transport: "BTS Chit Lom", mapUrl: "https://www.google.com/maps/search/?api=1&query=Big+C+Supercenter+Rajdamri" }, { time: "14:00", name: "前往機場 (BKK)", desc: "結束探險，返航台灣。", transport: "包車", mapUrl: "https://www.google.com/maps/search/?api=1&query=Suvarnabhumi+Airport" }] }
+                { day: 1, date: "11/12", title: "曼谷基地登陸", weather: { status: "晴朗", temp: "32°C", hum: "65%", icon: "Sun" }, spots: [{ time: "15:00", name: "飯店基地 Check-in", desc: "適應熱帶氣候，飯店泳池玩水消暑。", transport: "機場包車", mapUrl: "https://www.google.com/maps/search/?api=1&query=Bangkok+Hotels" }, { time: "18:00", name: "ICONSIAM 能量特區", desc: "B1 SookSiam 室內水上市場用餐，環境優美。", transport: "接駁船", mapUrl: "https://www.google.com/maps/search/?api=1&query=ICONSIAM" }] },
+                { day: 2, date: "11/13", title: "野生巨獸追蹤", weather: { status: "炎熱", temp: "34°C", hum: "60%", icon: "Sun" }, spots: [{ time: "09:30", name: "Safari World 野生動物園", desc: "【重點】親手餵食長頸鹿，觀察野生獸類。", transport: "專屬包車", mapUrl: "https://www.google.com/maps/search/?api=1&query=Safari+World+Bangkok", special: true }, { time: "18:30", name: "Jodd Fairs 火山能量餐", desc: "品嚐著名的火山排骨晚餐。", transport: "MRT Rama 9", mapUrl: "https://www.google.com/maps/search/?api=1&query=JODD+FAIRS+Rama+9" }] },
+                { day: 3, date: "11/14", title: "史前化石考古", weather: { status: "多雲", temp: "30°C", hum: "70%", icon: "Cloud" }, spots: [{ time: "10:30", name: "兒童探索博物館", desc: "沙坑考古挖掘恐龍骨骸體驗。", transport: "BTS Mo Chit", mapUrl: "https://www.google.com/maps/search/?api=1&query=Children's+Discovery+Museum+Bangkok" }, { time: "16:00", name: "Mixt Chatuchak 補給中心", desc: "強力冷氣避暑，採買在地特色小物。", transport: "步行", mapUrl: "https://www.google.com/maps/search/?api=1&query=Mixt+Chatuchak" }] },
+                { day: 4, date: "11/15", title: "侏儸紀觀測核心", weather: { status: "局部陣雨", temp: "29°C", hum: "80%", icon: "Rain" }, spots: [{ time: "11:00", name: "Jurassic Dinosaur Park", desc: "ICONSIAM 室內 1:1 動態恐龍震撼體驗。", transport: "BTS Charoen Nakhon", mapUrl: "https://www.google.com/maps/search/?api=1&query=Jurassic+Dinosaur+Adventure+Park+ICONSIAM", special: true }, { time: "17:00", name: "Siam Square 潮流探索", desc: "尋找造型冰淇淋，慶祝任務成功。", transport: "BTS Siam", mapUrl: "https://www.google.com/maps/search/?api=1&query=Siam+Square" }] },
+                { day: 5, date: "11/16", title: "物資大採買 & 返航", weather: { status: "晴朗", temp: "33°C", hum: "60%", icon: "Sun" }, spots: [{ time: "10:00", name: "Big C 補給總庫", desc: "零食海苔一次買齊，帶回基地分享。", transport: "BTS Chit Lom", mapUrl: "https://www.google.com/maps/search/?api=1&query=Big+C+Supercenter+Rajdamri" }, { time: "14:00", name: "撤離回曼谷機場 (BKK)", desc: "帶著滿滿回憶返航台灣基地。", transport: "包車", mapUrl: "https://www.google.com/maps/search/?api=1&query=Suvarnabhumi+Airport" }] }
             ];
 
             return (
-                <div className="flex justify-center min-h-screen font-serif selection:bg-[#a62621]/30">
-                    <div className="w-full max-w-md bg-[#e6d8b5] h-screen flex flex-col shadow-2xl relative overflow-hidden border-x-4 border-[#0b1a0e]">
+                <div className="flex justify-center h-[100dvh] font-serif selection:bg-[#a62621]/30">
+                    <div className="w-full max-w-md bg-[#e6d8b5] h-full flex flex-col shadow-2xl relative overflow-hidden border-x-4 border-[#0b1a0e]">
                         
-                        {/* 1. 固定 Header */}
                         <div className="bg-[#0b1a0e] p-6 pt-10 shadow-xl z-50 border-b-8 border-[#a62621] relative flex-shrink-0">
-                            <div className="absolute top-0 left-0 w-full h-4 bg-yellow-hazard-stripe"></div>
+                            <div className="absolute top-0 left-0 w-full h-4 bg-yellow-hazard"></div>
                             <div className="flex justify-between items-center text-[#e6d8b5]">
                                 <div className="flex items-center">
-                                    <div className="w-16 h-16 rounded-2xl bg-[#f9bc08] border-4 border-[#0b1a0e] flex items-center justify-center shadow-lg transform rotate-2">
+                                    <div className="w-14 h-14 rounded-2xl bg-[#f9bc08] border-4 border-[#0b1a0e] flex items-center justify-center shadow-lg transform rotate-2">
                                         <Svg.Tent className="text-[#0b1a0e] w-8 h-8" />
                                     </div>
                                     <div className="ml-4">
-                                        <h1 className="text-2xl font-black italic text-[#f9bc08] uppercase tracking-tighter">曼谷探險誌</h1>
-                                        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#c39133] mt-1 italic">
-                                            {user ? "📡 雲端數據已連線" : "⌛ 初始化系統..."}
-                                        </p>
+                                        <h1 className="text-xl font-black italic text-[#f9bc08] uppercase tracking-tighter">曼谷探險誌</h1>
+                                        <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-[#c39133] mt-1 italic">{syncStatus}</p>
                                     </div>
                                 </div>
                                 <div className="bg-[#1a1c13] p-2 rounded-xl border border-[#c39133]/30"><Svg.Compass className="text-[#f9bc08] w-6 h-6 animate-spin-slow" /></div>
                             </div>
                         </div>
 
-                        {/* 2. 主要滾動區 */}
-                        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pb-36 no-scrollbar relative">
+                        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pb-32 no-scrollbar relative">
                             {activeTab === 'itinerary' && (
                                 <>
                                     <div className="sticky top-0 z-40 bg-[#0b1a0e] px-5 py-3 shadow-md border-b border-[#c39133]/20">
                                         <div className="flex space-x-3 overflow-x-auto no-scrollbar py-1">
                                             {itinerary.map((item) => (
-                                                <button key={item.day} onClick={() => setActiveDay(item.day)} className={`flex-shrink-0 w-14 h-14 rounded-xl flex flex-col items-center justify-center border-b-4 transition-all ${activeDay === item.day ? 'bg-[#a62621] text-white border-white' : 'bg-[#1a1c13] text-[#c39133] border-transparent'}`}>
-                                                    <span className="text-[8px] font-black uppercase">Day</span><span className="text-sm font-black">{item.date}</span>
+                                                <button key={item.day} onClick={() => setActiveDay(item.day)} className={`flex-shrink-0 w-12 h-12 rounded-xl flex flex-col items-center justify-center border-b-4 transition-all ${activeDay === item.day ? 'bg-[#a62621] text-white border-white' : 'bg-[#1a1c13] text-[#c39133] border-transparent'}`}>
+                                                    <span className="text-[7px] font-black">Day</span><span className="text-xs font-black">{item.date}</span>
                                                 </button>
                                             ))}
                                         </div>
@@ -194,21 +213,19 @@
                                         <div className="bg-[#0b1a0e] rounded-2xl p-5 border-2 border-[#c39133]/30 shadow-lg flex justify-between items-center text-[#e6d8b5]">
                                             <div className="flex items-center space-x-4">
                                                 {React.createElement(Svg[itinerary[activeDay-1].weather.icon], { className: "w-10 h-10 text-[#f9bc08] animate-float" })}
-                                                <div><h2 className="text-xs font-black text-[#f9bc08]">區域預報</h2><p className="text-lg font-black italic">{itinerary[activeDay-1].weather.status}</p></div>
+                                                <div><h2 className="text-xs font-black text-[#f9bc08]">探險天氣</h2><p className="text-lg font-black italic">{itinerary[activeDay-1].weather.status}</p></div>
                                             </div>
-                                            <div className="text-right"><div className="text-xl font-black text-white">{itinerary[activeDay-1].weather.temp}</div><div className="text-[10px] text-[#c39133]">濕度 {itinerary[activeDay-1].weather.hum}</div></div>
+                                            <div className="text-right font-serif"><div className="text-xl font-black text-white">{itinerary[activeDay-1].weather.temp}</div><div className="text-[10px] text-[#c39133]">濕度 {itinerary[activeDay-1].weather.hum}</div></div>
                                         </div>
                                         <div className="space-y-8 relative ml-4">
                                             <div className="absolute left-6 top-6 bottom-6 w-1 bg-[#0b1a0e]/20 rounded-full border-l border-white/50"></div>
                                             {itinerary[activeDay-1].spots.map((spot, idx) => (
                                                 <div key={idx} className="relative pl-16">
-                                                    <div className={`absolute left-0 w-12 h-12 rounded-full flex items-center justify-center z-20 shadow-xl border-4 border-[#0b1a0e] animate-soft-bounce ${spot.special ? 'bg-[#a62621] text-white' : 'bg-[#c39133] text-[#0b1a0e]'}`}>
-                                                        {spot.special ? <Svg.Flame className="w-5 h-5" /> : <Svg.Tent className="w-5 h-5" />}
-                                                    </div>
+                                                    <div className={`absolute left-0 w-12 h-12 rounded-full flex items-center justify-center z-20 shadow-xl border-4 border-[#0b1a0e] animate-soft-bounce ${spot.special ? 'bg-[#a62621] text-white' : 'bg-[#c39133] text-[#0b1a0e]'}`}>{spot.special ? <Svg.Flame className="w-5 h-5" /> : <Svg.Tent className="w-5 h-5" />}</div>
                                                     <div className="bg-[#f2e7c9] rounded-3xl p-6 border-2 border-[#0b1a0e] shadow-lg">
                                                         <h3 className="font-black text-[#0b1a0e] text-lg mb-2">{spot.name}</h3>
-                                                        <p className="text-xs text-[#0b1a0e]/70 mb-4">{spot.desc}</p>
-                                                        <a href={spot.mapUrl} target="_blank" rel="noreferrer" className="flex items-center justify-center bg-[#0b1a0e] text-[#f9bc08] py-3 rounded-xl text-xs font-black uppercase border-b-4 border-[#a62621]">開啟地圖雷達</a>
+                                                        <p className="text-xs text-[#0b1a0e]/70 mb-4 leading-relaxed">{spot.desc}</p>
+                                                        <a href={spot.mapUrl} target="_blank" rel="noreferrer" className="flex items-center justify-center bg-[#0b1a0e] text-[#f9bc08] py-3 rounded-xl text-xs font-black uppercase border-b-4 border-[#a62621]">開啟座標雷達</a>
                                                     </div>
                                                 </div>
                                             ))}
@@ -219,18 +236,18 @@
 
                             {activeTab === 'checklist' && (
                                 <>
-                                    <div className="sticky top-0 z-40 bg-[#e6d8b5] px-5 py-4">
+                                    <div className="sticky top-0 z-40 bg-[#e6d8b5] px-5 py-4 border-b border-black/10">
                                         <div className="bg-[#a62621] rounded-2xl p-6 text-white shadow-xl relative overflow-hidden border-b-8 border-[#801b17]">
                                             <Svg.Binoc className="absolute -right-5 -top-5 opacity-20 w-32 h-32" />
                                             <h2 className="text-2xl font-black italic uppercase">裝備清點箱</h2>
                                         </div>
                                     </div>
                                     <div className="px-5 pb-8">
-                                        <div className="bg-[#f2e7c9] rounded-2xl p-4 border-2 border-[#0b1a0e] mt-2 shadow-lg">
+                                        <div className="bg-[#f2e7c9] rounded-2xl p-4 border-2 border-[#0b1a0e] mt-4 shadow-lg">
                                             {checklist.map(item => (
                                                 <div key={item.id} onClick={() => toggleCheck(item.id)} className="flex items-center p-4 border-b border-[#0b1a0e]/10 last:border-none cursor-pointer">
-                                                    <div className={`w-7 h-7 rounded-md border-4 flex items-center justify-center mr-4 ${item.completed ? 'bg-[#0b1a0e]' : 'border-[#0b1a0e]/30'}`}>{item.completed && <Svg.Check className="text-[#f9bc08] w-4 h-4" />}</div>
-                                                    <span className={`text-sm font-black ${item.completed ? 'text-gray-400 line-through' : 'text-[#0b1a0e]'}`}>{item.text}</span>
+                                                    <div className={`w-8 h-8 rounded-lg border-4 flex items-center justify-center mr-4 transition-all ${item.completed ? 'bg-[#0b1a0e] border-[#0b1a0e]' : 'border-[#0b1a0e]/30 bg-white'}`}>{item.completed && <Svg.Check className="text-[#f9bc08] w-5 h-5 stroke-[4px]" />}</div>
+                                                    <span className={`text-base font-black ${item.completed ? 'text-gray-400 line-through' : 'text-[#0b1a0e]'}`}>{item.text}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -240,29 +257,29 @@
 
                             {activeTab === 'budget' && (
                                 <>
-                                    <div className="sticky top-0 z-40 bg-[#e6d8b5] px-5 py-4">
+                                    <div className="sticky top-0 z-40 bg-[#e6d8b5] px-5 py-4 border-b border-black/10">
                                         <div className="bg-[#0b1a0e] p-6 rounded-2xl text-center border-2 border-[#c39133]/30 shadow-lg relative overflow-hidden">
-                                            <p className="text-[10px] font-black text-[#f9bc08] uppercase">探險開銷結存 (NT$)</p>
-                                            <div className="text-4xl font-black text-[#e6d8b5] mt-1">NT$ {expenses.reduce((sum, e) => sum + e.amount, 0).toLocaleString()}</div>
+                                            <p className="text-[10px] font-black text-[#f9bc08] uppercase tracking-widest">探險共同預算結存 (NT$)</p>
+                                            <div className="text-4xl font-black text-[#e6d8b5] mt-1 font-serif">NT$ {expenses.reduce((sum, e) => sum + e.amount, 0).toLocaleString()}</div>
                                         </div>
                                     </div>
                                     <div className="px-5 pb-8 space-y-6">
-                                        <div className="bg-[#f2e7c9] rounded-2xl p-6 border-4 border-[#0b1a0e] space-y-4">
-                                            <input type="text" placeholder="品項名稱" className="w-full bg-[#e6d8b5] rounded-lg p-3 text-sm font-black border-2 border-[#0b1a0e] focus:bg-white" value={newExpense.title} onChange={(e) => setNewExpense({...newExpense, title: e.target.value})} />
+                                        <div className="bg-[#f2e7c9] rounded-2xl p-6 border-4 border-[#0b1a0e] space-y-4 shadow-xl mt-4">
+                                            <input type="text" placeholder="品項名稱" className="w-full bg-[#e6d8b5]/50 rounded-lg p-3 text-sm font-black border-2 border-[#0b1a0e] focus:bg-white outline-none" value={newExpense.title} onChange={(e) => setNewExpense({...newExpense, title: e.target.value})} />
                                             <div className="flex space-x-2">
-                                                <input type="number" placeholder="台幣金額" className="flex-1 bg-[#e6d8b5] rounded-lg p-3 text-sm font-black border-2 border-[#0b1a0e] focus:bg-white" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} />
-                                                <button onClick={addExpense} className="bg-[#a62621] text-white px-8 rounded-xl font-black active:scale-95 shadow-md">輸入</button>
+                                                <input type="number" placeholder="金額" className="flex-1 bg-[#e6d8b5]/50 rounded-lg p-3 text-sm font-black border-2 border-[#0b1a0e] focus:bg-white outline-none" value={newExpense.amount} onChange={(e) => setNewExpense({...newExpense, amount: e.target.value})} />
+                                                <button onClick={addExpense} className="bg-[#a62621] text-white px-8 rounded-xl font-black active:scale-95 shadow-md border-b-4 border-[#801b17]">輸入</button>
                                             </div>
                                         </div>
                                         {expenses.map(expense => (
-                                            <div key={expense.id} className="bg-[#f2e7c9] p-4 rounded-xl flex justify-between items-start border-2 border-[#0b1a0e] border-r-8 border-r-[#0b1a0e] shadow-md">
+                                            <div key={expense.id} className="bg-[#f2e7c9] p-5 rounded-2xl flex justify-between items-start border-2 border-[#0b1a0e] border-r-8 border-r-[#0b1a0e] shadow-md animate-in slide-in-from-right-4">
                                                 <div className="flex-1 min-w-0 pr-4">
-                                                    <h3 className="font-black text-sm text-[#0b1a0e] uppercase italic break-words overflow-wrap-anywhere">{expense.title}</h3>
-                                                    <p className="text-[9px] text-[#a62621] font-black mt-1 uppercase">日期: {expense.editTime}</p>
+                                                    <h3 className="font-black text-lg text-[#0b1a0e] uppercase italic break-words-all">{expense.title}</h3>
+                                                    <p className="text-[9px] text-[#a62621] font-black mt-1 uppercase font-serif">日期: {expense.editTime}</p>
                                                 </div>
-                                                <div className="flex flex-col items-end space-y-2 flex-shrink-0">
-                                                    <span className="font-black text-[#0b1a0e]">NT$ {expense.amount}</span>
-                                                    <button onClick={() => deleteExpense(expense.id)} className="p-2 bg-[#0b1a0e] rounded-lg"><Svg.Trash className="w-4 h-4 text-[#a62621]" /></button>
+                                                <div className="flex flex-col items-end space-y-3 flex-shrink-0">
+                                                    <span className="font-black text-lg text-[#0b1a0e] font-serif">NT$ {expense.amount}</span>
+                                                    <button onClick={() => deleteExpense(expense.id)} className="p-2 bg-[#0b1a0e] rounded-xl active:scale-90 transition-transform"><Svg.Trash className="w-4 h-4 text-[#a62621]" /></button>
                                                 </div>
                                             </div>
                                         ))}
@@ -271,12 +288,17 @@
                             )}
                         </div>
 
-                        {/* 3. 固定底部導航 */}
-                        <div className="absolute bottom-6 left-6 right-6 h-20 bg-[#0b1a0e] rounded-[2rem] flex items-center justify-around z-[100] border-b-8 border-[#a62621] shadow-2xl">
-                            <button onClick={() => setActiveTab('itinerary')} className={`flex flex-col items-center transition-all ${activeTab === 'itinerary' ? 'text-[#f9bc08] scale-110' : 'text-[#c39133] opacity-60'}`}><Svg.Tent className="w-6 h-6" /><span className="text-[9px] font-black mt-1 uppercase">行程</span></button>
-                            <button onClick={() => setActiveTab('checklist')} className={`flex flex-col items-center transition-all ${activeTab === 'checklist' ? 'text-[#a62621] scale-110' : 'text-[#c39133] opacity-60'}`}><Svg.Binoc className="w-6 h-6" /><span className="text-[9px] font-black mt-1 uppercase">裝備</span></button>
-                            <button onClick={() => setActiveTab('budget')} className={`flex flex-col items-center transition-all ${activeTab === 'budget' ? 'text-[#e6d8b5] scale-110' : 'text-[#c39133] opacity-60'}`}><Svg.Wallet className="w-6 h-6" /><span className="text-[9px] font-black mt-1 uppercase">開銷</span></button>
+                        {/* 底部導航 - 徹底固定 */}
+                        <div className="fixed bottom-0 left-0 right-0 z-[100] px-6 pb-8 bg-gradient-to-t from-[#e6d8b5] via-[#e6d8b5] to-transparent pointer-events-none pt-10">
+                            <div className="max-w-md mx-auto pointer-events-auto">
+                                <div className="h-20 bg-[#0b1a0e] rounded-[2.5rem] flex items-center justify-around border-b-8 border-[#a62621] shadow-[0_20px_50px_rgba(0,0,0,0.4)]">
+                                    <button onClick={() => setActiveTab('itinerary')} className={`flex flex-col items-center transition-all ${activeTab === 'itinerary' ? 'text-[#f9bc08] scale-110' : 'text-[#c39133] opacity-60'}`}><Svg.Tent className="w-6 h-6" /><span className="text-[10px] font-black mt-1 uppercase">行程</span></button>
+                                    <button onClick={() => setActiveTab('checklist')} className={`flex flex-col items-center transition-all ${activeTab === 'checklist' ? 'text-[#a62621] scale-110' : 'text-[#c39133] opacity-60'}`}><Svg.Binoc className="w-6 h-6" /><span className="text-[10px] font-black mt-1 uppercase">裝備</span></button>
+                                    <button onClick={() => setActiveTab('budget')} className={`flex flex-col items-center transition-all ${activeTab === 'budget' ? 'text-[#e6d8b5] scale-110' : 'text-[#c39133] opacity-60'}`}><Svg.Wallet className="w-6 h-6" /><span className="text-[10px] font-black mt-1 uppercase">開銷</span></button>
+                                </div>
+                            </div>
                         </div>
+
                     </div>
                 </div>
             );
